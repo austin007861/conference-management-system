@@ -1,0 +1,1789 @@
+import { useState, useEffect, type ReactNode, useMemo } from "react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { Link, Route, Switch, Router as WouterRouter, useLocation, useParams } from "wouter";
+import {
+  Activity, ArrowLeft, ArrowRight, BarChart3, Bell, Building2, CalendarDays, Check,
+  ChevronDown, Clock3, CloudUpload, Download, FileText, Filter, LayoutDashboard, Library,
+  ListFilter, Mail, MapPin, Menu, MoreHorizontal,
+  Pencil, Plus, Search, Send, Settings2, ShieldCheck, Sparkles, Trash2, UserRound,
+  UsersRound, X, Zap,
+} from "lucide-react";
+import {
+  getGetConferenceQueryKey,
+  getListConferencesQueryKey,
+  getListSessionsQueryKey, getListSpeakersQueryKey, getListVenuesQueryKey,
+  useCreateConference, useCreateSession, useCreateSpeaker, useCreateVenue,
+  useDeleteConference, useDeleteSpeaker, useDeleteVenue, useGetConference,
+  useGetDashboardSummary, useGetRegistrationReport, useListAttendees, useListConferences,
+  useListDocuments, useListSessions, useListSpeakers, useListVenues, useUpdateConference,
+} from "@workspace/api-client-react";
+import type { Attendee, Conference, ConferenceDetail, ConferenceInput, Document as ConferenceDocument, Session, Speaker, SpeakerInput, Venue, VenueInput } from "@workspace/api-client-react";
+import { ErrorBoundary } from "@/components/error-boundary";
+import NotFound from "@/pages/not-found";
+import { Toaster } from "@/components/ui/toaster";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { AuthProvider, useAuth } from "@/context/auth-context";
+import { DashboardLayout } from "@/components/layout/dashboard-layout";
+import { LoginPage } from "@/pages/auth/login";
+import { SignupPage } from "@/pages/auth/signup";
+import { AdminDashboard } from "@/pages/admin/dashboard";
+import { OrganiserDashboard } from "@/pages/organiser/dashboard";
+import { SpeakerDashboard } from "@/pages/speaker/dashboard";
+import { AttendeeDashboard } from "@/pages/attendee/dashboard";
+import { ConferenceBrowsePage } from "@/pages/attendee/conference-browse";
+import { SessionBrowsePage } from "@/pages/attendee/session-browse";
+import "./index.css";
+
+const queryClient = new QueryClient();
+
+const cn = (...classes: Array<string | false | undefined>) =>
+  classes.filter(Boolean).join(" ");
+
+const initials = (name = "") =>
+  name.split(" ").map((part) => part[0]).slice(0, 2).join("").toUpperCase() || "CM";
+
+const dateLabel = (date?: string) =>
+  date
+    ? new Intl.DateTimeFormat("en-US", {
+        month: "short",
+        day: "numeric",
+        year: "numeric",
+      }).format(new Date(date))
+    : "Date to be confirmed";
+
+const timeLabel = (time?: string) =>
+  time
+    ? new Date(`2024-01-01T${time}`).toLocaleTimeString("en-US", {
+        hour: "numeric",
+        minute: "2-digit",
+      })
+    : "—";
+
+function Button({
+  children,
+  variant = "primary",
+  className,
+  onClick,
+  type = "button",
+  disabled,
+  testId,
+}: {
+  children: React.ReactNode;
+  variant?: "primary" | "outline" | "ghost" | "danger" | "dark";
+  className?: string;
+  onClick?: () => void;
+  type?: "button" | "submit";
+  disabled?: boolean;
+  testId?: string;
+}) {
+  return (
+    <button
+      type={type}
+      onClick={onClick}
+      disabled={disabled}
+      data-testid={testId}
+      className={cn(
+        "inline-flex h-10 items-center justify-center gap-2 rounded-lg px-4 text-sm font-semibold shadow-sm disabled:pointer-events-none disabled:opacity-45",
+        variant === "primary" &&
+          "bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))] hover:-translate-y-0.5 hover:shadow-md",
+        variant === "outline" &&
+          "border border-border bg-card text-foreground hover:bg-secondary",
+        variant === "ghost" &&
+          "text-muted-foreground hover:bg-secondary hover:text-foreground",
+        variant === "danger" &&
+          "border border-[hsl(var(--destructive)/.3)] bg-[hsl(var(--destructive)/.08)] text-[hsl(var(--destructive))] hover:bg-[hsl(var(--destructive)/.14)]",
+        variant === "dark" &&
+          "bg-[hsl(var(--sidebar))] text-[hsl(var(--sidebar-foreground))] hover:-translate-y-0.5",
+        className,
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  type = "text",
+  required,
+  multiline = false,
+  testId,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  placeholder?: string;
+  type?: string;
+  required?: boolean;
+  multiline?: boolean;
+  testId?: string;
+}) {
+  return (
+    <label className="grid gap-2 text-sm font-semibold text-foreground">
+      <span>
+        {label}
+        {required && (
+          <span className="ml-1 text-[hsl(var(--destructive))]">*</span>
+        )}
+      </span>
+      {multiline ? (
+        <textarea
+          required={required}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          data-testid={testId}
+          className="min-h-24 resize-y rounded-lg border border-input bg-background px-3 py-2.5 text-sm font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+        />
+      ) : (
+        <input
+          required={required}
+          type={type}
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          placeholder={placeholder}
+          data-testid={testId}
+          className="h-11 rounded-lg border border-input bg-background px-3 text-sm font-normal outline-none focus:border-primary focus:ring-2 focus:ring-primary/15"
+        />
+      )}
+    </label>
+  );
+}
+
+function StatusBadge({ status }: { status?: string }) {
+  const label = status?.replace("-", " ") || "Unknown";
+  return (
+    <span
+      data-testid={`status-${status || "unknown"}`}
+      className={cn(
+        "inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-bold capitalize tracking-wide",
+        status === "live" || status === "checked-in"
+          ? "border-emerald-200 bg-emerald-50 text-emerald-700"
+          : status === "published" || status === "confirmed"
+            ? "border-sky-200 bg-sky-50 text-sky-700"
+            : status === "planning" || status === "pending"
+              ? "border-amber-200 bg-amber-50 text-amber-700"
+              : "border-border bg-secondary text-muted-foreground",
+      )}
+    >
+      {label}
+    </span>
+  );
+}
+
+function Avatar({
+  name,
+  photoUrl,
+  size = "md",
+}: {
+  name: string;
+  photoUrl?: string;
+  size?: "sm" | "md" | "lg";
+}) {
+  return photoUrl ? (
+    <img
+      src={photoUrl}
+      alt={name}
+      data-testid={`img-avatar-${name}`}
+      className={cn(
+        "rounded-full object-cover",
+        size === "sm"
+          ? "h-8 w-8"
+          : size === "lg"
+            ? "h-14 w-14"
+            : "h-10 w-10",
+      )}
+    />
+  ) : (
+    <div
+      data-testid={`avatar-${name}`}
+      className={cn(
+        "flex shrink-0 items-center justify-center rounded-full bg-[hsl(var(--accent)/.24)] font-bold text-[hsl(var(--primary))]",
+        size === "sm"
+          ? "h-8 w-8 text-[10px]"
+          : size === "lg"
+            ? "h-14 w-14 text-base"
+            : "h-10 w-10 text-xs",
+      )}
+    >
+      {initials(name)}
+    </div>
+  );
+}
+
+function LoadingRows({ count = 4 }: { count?: number }) {
+  return (
+    <div className="grid gap-3">
+      {Array.from({ length: count }).map((_, index) => (
+        <div
+          key={index}
+          className="h-16 animate-pulse rounded-lg bg-secondary/70"
+        />
+      ))}
+    </div>
+  );
+}
+
+function QueryState({
+  loading,
+  error,
+  onRetry,
+  children,
+  empty = false,
+  emptyTitle = "Nothing here yet",
+  emptyBody = "When records are added, they will appear in this space.",
+}: {
+  loading?: boolean;
+  error?: boolean;
+  onRetry?: () => void;
+  children: React.ReactNode;
+  empty?: boolean;
+  emptyTitle?: string;
+  emptyBody?: string;
+}) {
+  if (loading) return <LoadingRows />;
+  if (error) {
+    return (
+      <div className="rounded-xl border border-[hsl(var(--destructive)/.25)] bg-[hsl(var(--destructive)/.05)] p-8 text-center">
+        <ShieldCheck className="mx-auto mb-3 h-7 w-7 text-[hsl(var(--destructive))]" />
+        <h3 className="font-semibold">We couldn't load this view</h3>
+        <p className="mt-1 text-sm text-muted-foreground">
+          The workspace is still reachable. Try again in a moment.
+        </p>
+        <Button variant="outline" className="mt-4" onClick={onRetry} testId="button-retry">
+          Retry
+        </Button>
+      </div>
+    );
+  }
+  if (empty) {
+    return (
+      <div className="rounded-xl border border-dashed border-border bg-card px-6 py-14 text-center">
+        <div className="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-secondary">
+          <Sparkles className="h-5 w-5 text-[hsl(var(--primary))]" />
+        </div>
+        <h3 className="font-semibold">{emptyTitle}</h3>
+        <p className="mx-auto mt-1 max-w-sm text-sm text-muted-foreground">
+          {emptyBody}
+        </p>
+      </div>
+    );
+  }
+  return <>{children}</>;
+}
+
+function PageHeader({
+  eyebrow,
+  title,
+  body,
+  action,
+}: {
+  eyebrow?: string;
+  title: string;
+  body?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="mb-8 flex flex-col justify-between gap-5 md:flex-row md:items-end">
+      <div>
+        <div className="mono-font mb-2 text-[10px] font-medium uppercase tracking-[.2em] text-[hsl(var(--primary))]">
+          {eyebrow}
+        </div>
+        <h1
+          data-testid={`heading-${title.toLowerCase().replaceAll(" ", "-")}`}
+          className="display-font text-3xl font-bold tracking-tight text-foreground md:text-4xl"
+        >
+          {title}
+        </h1>
+        {body && (
+          <p className="mt-2 max-w-2xl text-sm leading-6 text-muted-foreground">
+            {body}
+          </p>
+        )}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function PageFrame({ children }: { children: React.ReactNode }) {
+  return <>{children}</>;
+}
+
+function Modal({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[hsl(var(--sidebar)/.5)] p-4 backdrop-blur-sm">
+      <div className="max-h-[90vh] w-full max-w-lg overflow-auto rounded-2xl border border-border bg-card p-6 shadow-2xl md:p-8">
+        <div className="mb-6 flex items-center justify-between">
+          <h2 className="display-font text-2xl font-bold">{title}</h2>
+          <button
+            onClick={onClose}
+            className="rounded-lg p-2 text-muted-foreground hover:bg-secondary"
+            data-testid="button-close-modal"
+          >
+            <X className="h-5 w-5" />
+          </button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function ConferenceModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const mutation = useCreateConference();
+  const [form, setForm] = useState<{ title: string; description: string; startDate: string; endDate: string }>({
+    title: "",
+    description: "",
+    startDate: "",
+    endDate: "",
+  });
+  const update = (key: keyof typeof form) => (value: string) =>
+    setForm((current) => ({ ...current, [key]: value }));
+
+  return (
+    <Modal title="Start a conference" onClose={onClose}>
+      <form
+        className="grid gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          mutation.mutate({ data: form as unknown as ConferenceInput }, { onSuccess: () => { onCreated(); onClose(); } });
+        }}
+      >
+        <Field
+          label="Conference title"
+          value={form.title}
+          onChange={update("title")}
+          placeholder="Annual Research Assembly"
+          required
+          testId="input-conference-title"
+        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field
+            label="Start date"
+            value={form.startDate}
+            onChange={update("startDate")}
+            type="date"
+            required
+            testId="input-conference-start"
+          />
+          <Field
+            label="End date"
+            value={form.endDate}
+            onChange={update("endDate")}
+            type="date"
+            required
+            testId="input-conference-end"
+          />
+        </div>
+        <Field
+          label="Description"
+          value={form.description}
+          onChange={update("description")}
+          placeholder="A short description for your team."
+          multiline
+          testId="input-conference-description"
+        />
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={onClose} testId="button-cancel-conference">
+            Cancel
+          </Button>
+          <Button
+            type="submit"
+            disabled={mutation.isPending}
+            testId="button-create-conference"
+          >
+            {mutation.isPending ? "Creating…" : "Create conference"}
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function Conferences() {
+  const [search, setSearch] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const query = useListConferences({ search: search || undefined });
+  const conferences = query.data ?? [];
+
+  return (
+    <PageFrame>
+      <PageHeader
+        eyebrow="Portfolio"
+        title="Conferences"
+        body="A clear view of everything your team is bringing into the room."
+        action={
+          <Button onClick={() => setShowCreate(true)} testId="button-open-create-conference">
+            <Plus className="h-4 w-4" /> New conference
+          </Button>
+        }
+      />
+      <div className="mb-5 flex flex-col gap-3 md:flex-row">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search conferences"
+            data-testid="input-search-conferences"
+            className="h-10 w-full rounded-lg border border-input bg-card pl-9 pr-3 text-sm outline-none focus:border-primary"
+          />
+        </div>
+        <Button variant="outline" className="h-10" testId="button-filter-conferences">
+          <Filter className="h-4 w-4" /> Filters
+        </Button>
+      </div>
+      <QueryState
+        loading={query.isLoading}
+        error={query.isError}
+        onRetry={() => query.refetch()}
+        empty={!query.isLoading && conferences.length === 0}
+        emptyTitle="No conferences match that search"
+        emptyBody="Try a different phrase or start a new conference for the workspace."
+      >
+        <div className="grid gap-4 md:grid-cols-2">
+          {conferences.map((conference) => (
+            <ConferenceCard key={conference.id} conference={conference} />
+          ))}
+        </div>
+      </QueryState>
+      {showCreate && (
+        <ConferenceModal
+          onClose={() => setShowCreate(false)}
+          onCreated={() => {
+            queryClient.invalidateQueries({
+              queryKey: getListConferencesQueryKey(),
+            });
+          }}
+        />
+      )}
+    </PageFrame>
+  );
+}
+
+function ConferenceCard({ conference }: { conference: Conference }) {
+  return (
+    <Link
+      href={`/conferences/${conference.id}`}
+      data-testid={`card-conference-${conference.id}`}
+      className="group relative overflow-hidden rounded-xl border border-border bg-card p-6 shadow-sm hover:-translate-y-0.5 hover:border-[hsl(var(--primary)/.35)] hover:shadow-md"
+    >
+      <div className="absolute inset-y-0 left-0 w-1" style={{ backgroundColor: "#0f6876" }} />
+      <div className="flex items-start justify-between gap-4">
+        <div>
+          <h2 className="mt-4 text-xl font-bold tracking-tight group-hover:text-[hsl(var(--primary))]">
+            {conference.title}
+          </h2>
+          <p className="mt-2 line-clamp-2 text-sm leading-6 text-muted-foreground">
+            {conference.description}
+          </p>
+        </div>
+        <ArrowRight className="mt-1 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:translate-x-1" />
+      </div>
+      <div className="mt-6 flex items-center gap-2 text-xs font-semibold text-muted-foreground">
+        <CalendarDays className="h-3.5 w-3.5 text-[hsl(var(--primary))]" />
+        {dateLabel(conference.startDate as unknown as string)} –{" "}
+        {dateLabel(conference.endDate as unknown as string)}
+      </div>
+    </Link>
+  );
+}
+
+function ConferenceDetailPage() {
+  const { id = "" } = useParams<{ id: string }>();
+  const [, setLocation] = useLocation();
+  const [tab, setTab] = useState("overview");
+  const [editing, setEditing] = useState(false);
+  const updateMutation = useUpdateConference();
+  const deleteMutation = useDeleteConference();
+  const query = useGetConference(id, {
+    query: { enabled: !!id, queryKey: getGetConferenceQueryKey(id) },
+  });
+  const conference = query.data as ConferenceDetail | undefined;
+
+  if (query.isLoading) return <PageFrame><LoadingRows count={5} /></PageFrame>;
+  if (query.isError || !conference)
+    return (
+      <PageFrame>
+        <QueryState error onRetry={() => query.refetch()}>
+          <div />
+        </QueryState>
+      </PageFrame>
+    );
+
+  return (
+    <PageFrame>
+      <Link
+        href="/conferences"
+        className="mb-6 inline-flex items-center gap-2 text-sm font-semibold text-muted-foreground hover:text-foreground"
+        data-testid="link-back-conferences"
+      >
+        <ArrowLeft className="h-4 w-4" /> All conferences
+      </Link>
+      <div className="relative overflow-hidden rounded-2xl bg-[hsl(var(--sidebar))] p-7 text-[hsl(var(--sidebar-foreground))] md:p-10">
+        <div className="absolute right-0 top-0 h-full w-1/2 opacity-20" style={{ background: `radial-gradient(circle at 75% 40%, #d39b35, transparent 60%)` }} />
+        <div className="relative">
+          <div className="flex flex-col justify-between gap-5 md:flex-row md:items-start">
+            <div>
+              <h1 data-testid="heading-conference-detail" className="display-font mt-4 max-w-3xl text-3xl font-bold tracking-tight md:text-5xl">
+                {conference.title}
+              </h1>
+              <p className="mt-4 max-w-2xl text-[hsl(var(--sidebar-foreground)/.65)] leading-7">
+                {conference.description}
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                className="border-[hsl(var(--sidebar-foreground)/.2)] bg-transparent text-[hsl(var(--sidebar-foreground))] hover:bg-[hsl(var(--sidebar-foreground)/.1)]"
+                onClick={() => setEditing(true)}
+                testId="button-edit-conference"
+              >
+                <Pencil className="h-4 w-4" /> Edit
+              </Button>
+              <Button
+                variant="ghost"
+                className="text-[hsl(var(--sidebar-foreground)/.65)]"
+                onClick={() => {
+                  if (window.confirm("Delete this conference?"))
+                    deleteMutation.mutate(
+                      { conferenceId: id },
+                      { onSuccess: () => setLocation("/conferences") },
+                    );
+                }}
+                testId="button-delete-conference"
+              >
+                <Trash2 className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
+          <div className="mt-9 flex flex-wrap gap-6 text-sm text-[hsl(var(--sidebar-foreground)/.7)]">
+            <span className="flex items-center gap-2">
+              <CalendarDays className="h-4 w-4 text-[hsl(var(--accent))]" />
+              {dateLabel(conference.startDate as unknown as string)} –{" "}
+              {dateLabel(conference.endDate as unknown as string)}
+            </span>
+          </div>
+        </div>
+      </div>
+      <div className="mt-6 grid gap-5 md:grid-cols-3">
+        <DetailStat
+          label="Attendees"
+          value={conference.attendeesCount || 0}
+          icon={UsersRound}
+        />
+        <DetailStat label="Sessions" value={0} icon={CalendarDays} />
+        <DetailStat label="Speakers" value={0} icon={UserRound} />
+      </div>
+      <div className="mt-6 grid gap-5 md:grid-cols-2">
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h2 className="text-lg font-bold">Sessions</h2>
+          <SimpleDetailList
+            sessions={[]}
+            empty="No sessions yet. Add sessions to build your programme."
+          />
+        </div>
+        <div className="rounded-xl border border-border bg-card p-6">
+          <h2 className="text-lg font-bold">Speakers</h2>
+          <p className="text-sm text-muted-foreground">
+            Assign speakers to sessions from the Speakers section.
+          </p>
+        </div>
+      </div>
+      {editing && (
+        <EditConferenceModal
+          conference={conference}
+          onClose={() => setEditing(false)}
+          onSaved={() => {
+            setEditing(false);
+            queryClient.invalidateQueries({
+              queryKey: getGetConferenceQueryKey(id),
+            });
+          }}
+          updateMutation={updateMutation}
+        />
+      )}
+    </PageFrame>
+  );
+}
+
+function DetailStat({
+  label,
+  value,
+  icon: Icon,
+}: {
+  label: string;
+  value: number;
+  icon: typeof UsersRound;
+}) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-5">
+      <Icon className="h-5 w-5 text-[hsl(var(--primary))]" />
+      <div className="mt-6 display-font text-3xl font-bold">{value}</div>
+      <div className="mt-1 text-sm text-muted-foreground">{label}</div>
+    </div>
+  );
+}
+
+function SimpleDetailList({
+  sessions,
+  empty,
+}: {
+  sessions?: Session[];
+  empty: string;
+}) {
+  return sessions?.length ? (
+    <div className="grid gap-3">
+      {sessions.map((session) => (
+        <div
+          key={session.id}
+          className="flex flex-col gap-3 rounded-xl border border-border bg-card p-4 sm:flex-row sm:items-center"
+        >
+          <div className="mono-font w-20 text-xs text-[hsl(var(--primary))]">
+            {timeLabel(session.startTime)}
+          </div>
+          <div className="flex-1">
+            <div className="font-semibold">{session.title}</div>
+            <div className="mt-1 text-xs text-muted-foreground">
+              {"TBD"}
+            </div>
+          </div>
+        </div>
+      ))}
+    </div>
+  ) : (
+    <QueryState empty emptyTitle="No sessions yet" emptyBody={empty}>
+      <div />
+    </QueryState>
+  );
+}
+
+function EditConferenceModal({
+  conference,
+  onClose,
+  onSaved,
+  updateMutation,
+}: {
+  conference: Conference;
+  onClose: () => void;
+  onSaved: () => void;
+  updateMutation: ReturnType<typeof useUpdateConference>;
+}) {
+  const [title, setTitle] = useState(conference.title);
+  const [description, setDescription] = useState(conference.description);
+
+  return (
+    <Modal title="Edit conference" onClose={onClose}>
+      <form
+        className="grid gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          updateMutation.mutate(
+            {
+              conferenceId: conference.id,
+              data: { title, description },
+            },
+            { onSuccess: onSaved },
+          );
+        }}
+      >
+        <Field
+          label="Conference title"
+          value={title}
+          onChange={setTitle}
+          required
+          testId="input-edit-conference-title"
+        />
+        <Field
+          label="Description"
+          value={description}
+          onChange={setDescription}
+          multiline
+          testId="input-edit-conference-description"
+        />
+        <div className="flex justify-end gap-2 pt-2">
+          <Button variant="ghost" onClick={onClose} testId="button-cancel-edit-conference">
+            Cancel
+          </Button>
+          <Button type="submit" disabled={updateMutation.isPending} testId="button-save-conference">
+            Save changes
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function Speakers() {
+  const [search, setSearch] = useState("");
+  const [showCreate, setShowCreate] = useState(false);
+  const query = useListSpeakers({ search: search || undefined });
+  const speakers = query.data ?? [];
+  const deleteMutation = useDeleteSpeaker();
+
+  return (
+    <PageFrame>
+      <PageHeader
+        eyebrow="People"
+        title="Speakers"
+        body="Keep every voice, affiliation, and session contribution within reach."
+        action={
+          <Button onClick={() => setShowCreate(true)} testId="button-open-create-speaker">
+            <Plus className="h-4 w-4" /> Add speaker
+          </Button>
+        }
+      />
+      <div className="mb-5 relative max-w-lg">
+        <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+        <input
+          value={search}
+          onChange={(event) => setSearch(event.target.value)}
+          placeholder="Search by name or organisation"
+          data-testid="input-search-speakers"
+          className="h-10 w-full rounded-lg border border-input bg-card pl-9 pr-3 text-sm outline-none focus:border-primary"
+        />
+      </div>
+      <QueryState
+        loading={query.isLoading}
+        error={query.isError}
+        onRetry={() => query.refetch()}
+        empty={!query.isLoading && speakers.length === 0}
+        emptyTitle="No speakers found"
+        emptyBody="Add your first speaker to begin shaping the programme."
+      >
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {speakers.map((speaker) => (
+            <div
+              key={speaker.id}
+              className="group rounded-xl border border-border bg-card p-5 transition hover:-translate-y-0.5 hover:shadow-md"
+              data-testid={`card-speaker-${speaker.id}`}
+            >
+              <div className="flex items-start justify-between">
+                <Avatar
+                  name={speaker.name}
+                  photoUrl={speaker.photoUrl ?? undefined}
+                  size="lg"
+                />
+                <button
+                  onClick={() => {
+                    if (window.confirm(`Remove ${speaker.name || "speaker"}?`))
+                      deleteMutation.mutate(
+                        { speakerId: speaker.id },
+                        { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListSpeakersQueryKey() }) },
+                      );
+                  }}
+                  className="rounded-md p-2 text-muted-foreground opacity-0 hover:bg-secondary group-hover:opacity-100"
+                  data-testid={`button-delete-speaker-${speaker.id}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+              <h2 className="mt-5 font-bold">{speaker.name}</h2>
+              <p className="mt-1 text-sm text-[hsl(var(--primary))]">
+                {speaker.email}
+              </p>
+              <p className="mt-4 line-clamp-3 text-sm leading-6 text-muted-foreground">
+                {speaker.bio}
+              </p>
+              <div className="mt-4 flex items-center gap-1 text-xs font-semibold text-[hsl(var(--primary))]">
+                <span data-testid={`speaker-session-count-${speaker.id}`}>
+                  {speaker.sessionCount} session{speaker.sessionCount !== 1 ? "s" : ""}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      </QueryState>
+      {showCreate && (
+        <SpeakerModal
+          onClose={() => setShowCreate(false)}
+          onCreated={() => {
+            queryClient.invalidateQueries({
+              queryKey: getListSpeakersQueryKey(),
+            });
+          }}
+        />
+      )}
+    </PageFrame>
+  );
+}
+
+function SpeakerModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const mutation = useCreateSpeaker();
+  const [form, setForm] = useState<{ userId: string; bio: string }>({ userId: "", bio: "" });
+  const update = (key: keyof typeof form) => (value: string) =>
+    setForm((current) => ({ ...current, [key]: value }));
+
+  return (
+    <Modal title="Add a speaker" onClose={onClose}>
+      <form
+        className="grid gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          mutation.mutate({ data: form as unknown as SpeakerInput }, { onSuccess: () => { onCreated(); onClose(); } });
+        }}
+      >
+        <Field
+          label="User ID"
+          value={form.userId}
+          onChange={update("userId")}
+          placeholder="User ID for the speaker"
+          required
+          testId="input-speaker-userId"
+        />
+        <Field
+          label="Bio"
+          value={form.bio}
+          onChange={update("bio")}
+          multiline
+          testId="input-speaker-bio"
+        />
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose} testId="button-cancel-speaker">
+            Cancel
+          </Button>
+          <Button type="submit" disabled={mutation.isPending} testId="button-create-speaker">
+            Add speaker
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function Attendees() {
+  const [search, setSearch] = useState("");
+  const query = useListAttendees({ search: search || undefined });
+  const attendees = query.data ?? [];
+
+  const exportCsv = () => {
+    const csv = [
+      "Name,Email,Registered",
+      ...attendees.map((a) =>
+        [a.name || "", a.email || "", a.registrationDate].map((v) => `"${v}"`).join(","),
+      ),
+    ].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "convene-attendees.csv";
+    anchor.click();
+    URL.revokeObjectURL(url);
+  };
+
+  return (
+    <PageFrame>
+      <PageHeader
+        eyebrow="People"
+        title="Attendees"
+        body="A thoughtful attendee experience starts with a complete picture."
+        action={
+          <Button variant="outline" onClick={exportCsv} testId="button-export-attendees">
+            <Download className="h-4 w-4" /> Export CSV
+          </Button>
+        }
+      />
+      <div className="mb-5 flex flex-col gap-3 md:flex-row">
+        <div className="relative flex-1">
+          <Search className="pointer-events-none absolute left-3 top-3 h-4 w-4 text-muted-foreground" />
+          <input
+            value={search}
+            onChange={(event) => setSearch(event.target.value)}
+            placeholder="Search attendees"
+            data-testid="input-search-attendees"
+            className="h-10 w-full rounded-lg border border-input bg-card pl-9 pr-3 text-sm outline-none focus:border-primary"
+          />
+        </div>
+      </div>
+      <QueryState
+        loading={query.isLoading}
+        error={query.isError}
+        onRetry={() => query.refetch()}
+        empty={!query.isLoading && attendees.length === 0}
+        emptyTitle="No attendees found"
+        emptyBody="Try a broader search or invite your first attendee."
+      >
+        <div className="overflow-hidden rounded-xl border border-border bg-card">
+          {attendees.map((attendee) => (
+            <button
+              key={attendee.id}
+              className="grid w-full gap-2 border-b border-border px-5 py-4 text-left last:border-0 hover:bg-secondary/50 md:grid-cols-[1.5fr_1.5fr_1fr] md:items-center md:gap-4"
+              data-testid={`row-attendee-${attendee.id}`}
+            >
+              <div className="flex items-center gap-3">
+                <Avatar name={attendee.name} />
+                <span className="font-semibold">{attendee.name}</span>
+              </div>
+              <span className="text-sm text-muted-foreground">
+                {attendee.email}
+              </span>
+              <span className="text-sm text-muted-foreground">
+                {dateLabel(attendee.registrationDate as unknown as string)}
+              </span>
+            </button>
+          ))}
+        </div>
+      </QueryState>
+    </PageFrame>
+  );
+}
+
+function Venues() {
+  const query = useListVenues();
+  const venues = query.data ?? [];
+  const [showCreate, setShowCreate] = useState(false);
+  const deleteMutation = useDeleteVenue();
+
+  return (
+    <PageFrame>
+      <PageHeader
+        eyebrow="Places"
+        title="Venues"
+        body="Know what's booked, what's available, and where the next handoff happens."
+        action={
+          <Button onClick={() => setShowCreate(true)} testId="button-open-create-venue">
+            <Plus className="h-4 w-4" /> Add venue
+          </Button>
+        }
+      />
+      <QueryState
+        loading={query.isLoading}
+        error={query.isError}
+        onRetry={() => query.refetch()}
+        empty={!query.isLoading && venues.length === 0}
+        emptyTitle="No venues in the workspace"
+        emptyBody="Create a venue to start mapping your conference footprint."
+      >
+        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {venues.map((venue) => (
+            <div
+              key={venue.id}
+              className="rounded-xl border border-border bg-card p-5"
+              data-testid={`card-venue-${venue.id}`}
+            >
+              <div className="flex items-start justify-between">
+                <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-[hsl(var(--primary)/.1)] text-[hsl(var(--primary))]">
+                  <Building2 className="h-5 w-5" />
+                </div>
+                <button
+                  className="rounded-md p-2 text-muted-foreground hover:bg-secondary"
+                  onClick={() => {
+                    if (window.confirm(`Remove ${venue.name}?`))
+                      deleteMutation.mutate(
+                        { venueId: venue.id },
+                        { onSuccess: () => queryClient.invalidateQueries({ queryKey: getListVenuesQueryKey() }) },
+                      );
+                  }}
+                  data-testid={`button-delete-venue-${venue.id}`}
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+              <h2 className="mt-5 font-bold">{venue.name}</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {venue.building} · Room {venue.room}
+              </p>
+              <div className="mt-6 flex items-end justify-between">
+                <div>
+                  <div className="mono-font text-2xl font-medium">{venue.capacity}</div>
+                  <div className="text-xs text-muted-foreground">capacity</div>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </QueryState>
+      {showCreate && (
+        <VenueModal
+          onClose={() => setShowCreate(false)}
+          onCreated={() => {
+            queryClient.invalidateQueries({
+              queryKey: getListVenuesQueryKey(),
+            });
+          }}
+        />
+      )}
+    </PageFrame>
+  );
+}
+
+function VenueModal({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const mutation = useCreateVenue();
+  const [form, setForm] = useState<{ name: string; building: string; room: string; capacity: string; conferenceId: string }>({
+    name: "",
+    building: "",
+    room: "",
+    capacity: "",
+    conferenceId: "",
+  });
+  const update = (key: keyof typeof form) => (value: string) =>
+    setForm((current) => ({ ...current, [key]: value }));
+
+  return (
+    <Modal title="Add a venue" onClose={onClose}>
+      <form
+        className="grid gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          mutation.mutate({ data: { ...form, capacity: Number(form.capacity) } as unknown as VenueInput }, { onSuccess: () => { onCreated(); onClose(); } });
+        }}
+      >
+        <Field
+          label="Venue name"
+          value={form.name}
+          onChange={update("name")}
+          placeholder="Marshall Hall"
+          required
+          testId="input-venue-name"
+        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field
+            label="Building"
+            value={form.building}
+            onChange={update("building")}
+            required
+            testId="input-venue-building"
+          />
+          <Field
+            label="Room"
+            value={form.room}
+            onChange={update("room")}
+            required
+            testId="input-venue-room"
+          />
+        </div>
+        <Field
+          label="Capacity"
+          value={form.capacity}
+          onChange={update("capacity")}
+          type="number"
+          required
+          testId="input-venue-capacity"
+        />
+        <Field
+          label="Conference ID"
+          value={form.conferenceId}
+          onChange={update("conferenceId")}
+          required
+          testId="input-venue-conference-id"
+        />
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose} testId="button-cancel-venue">
+            Cancel
+          </Button>
+          <Button type="submit" disabled={mutation.isPending} testId="button-create-venue">
+            Add venue
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function Schedule() {
+  const [conferenceId, setConferenceId] = useState<string | undefined>();
+  const [showCreate, setShowCreate] = useState(false);
+  const sessionQuery = useListSessions({ conferenceId });
+  const conferenceQuery = useListConferences();
+  const sessions = sessionQuery.data ?? [];
+
+  const grouped = sessions.reduce<Record<string, Session[]>>((acc, session) => {
+    const date = session.startTime.split("T")[0];
+    (acc[date] ||= []).push(session);
+    return acc;
+  }, {});
+
+  return (
+    <PageFrame>
+      <PageHeader
+        eyebrow="Programme"
+        title="Schedule"
+        body="The day at a glance, with enough detail to keep it moving."
+        action={
+          <Button onClick={() => setShowCreate(true)} testId="button-open-create-session">
+            <Plus className="h-4 w-4" /> Add session
+          </Button>
+        }
+      />
+      <div className="mb-6 flex flex-col gap-3 sm:flex-row sm:items-center">
+        <div className="flex items-center gap-2 text-sm font-semibold">
+          <ListFilter className="h-4 w-4 text-[hsl(var(--primary))]" /> Viewing
+        </div>
+        <select
+          value={conferenceId || ""}
+          onChange={(event) => setConferenceId(event.target.value || undefined)}
+          data-testid="select-schedule-conference"
+          className="h-10 max-w-xs rounded-lg border border-input bg-card px-3 text-sm outline-none"
+        >
+          <option value="">All conferences</option>
+          {(conferenceQuery.data ?? []).map((conference) => (
+            <option key={conference.id} value={conference.id}>
+              {conference.title}
+            </option>
+          ))}
+        </select>
+      </div>
+      <QueryState
+        loading={sessionQuery.isLoading}
+        error={sessionQuery.isError}
+        onRetry={() => sessionQuery.refetch()}
+        empty={!sessionQuery.isLoading && sessions.length === 0}
+        emptyTitle="Your programme is clear"
+        emptyBody="Add a session to start building the run of show."
+      >
+        <div className="grid gap-6">
+          {Object.entries(grouped)
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([date, daySessions]) => (
+              <div key={date}>
+                <div className="mb-3 flex items-center gap-3">
+                  <div className="mono-font text-xs uppercase tracking-widest text-[hsl(var(--primary))]">
+                    {dateLabel(date)}
+                  </div>
+                  <div className="h-px flex-1 bg-border" />
+                </div>
+                <div className="grid gap-3">
+                  {daySessions
+                    .sort((a, b) => a.startTime.localeCompare(b.startTime))
+                    .map((session) => (
+                      <div
+                        key={session.id}
+                        className="grid gap-3 rounded-xl border border-border bg-card p-5 sm:grid-cols-[90px_1fr_auto] sm:items-center"
+                        data-testid={`row-session-${session.id}`}
+                      >
+                        <div className="mono-font text-xs text-[hsl(var(--primary))]">
+                          {timeLabel(session.startTime)}<br />
+                          <span className="text-muted-foreground">
+                            {timeLabel(session.endTime)}
+                          </span>
+                        </div>
+                        <div>
+                          <h2 className="font-semibold">{session.title}</h2>
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {"TBD"}
+                          </p>
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              </div>
+            ))}
+        </div>
+      </QueryState>
+      {showCreate && (
+        <SessionModal
+          conferences={conferenceQuery.data ?? []}
+          onClose={() => setShowCreate(false)}
+          onCreated={() => {
+            queryClient.invalidateQueries({
+              queryKey: getListSessionsQueryKey(),
+            });
+          }}
+        />
+      )}
+    </PageFrame>
+  );
+}
+
+function SessionModal({
+  conferences,
+  onClose,
+  onCreated,
+}: {
+  conferences: Conference[];
+  onClose: () => void;
+  onCreated: () => void;
+}) {
+  const mutation = useCreateSession();
+  const [form, setForm] = useState<{ title: string; description: string; venueId: string; conferenceId: string; date: string; startTime: string; endTime: string }>({
+    title: "",
+    description: "",
+    venueId: "",
+    conferenceId: conferences[0]?.id || "",
+    date: "",
+    startTime: "",
+    endTime: "",
+  });
+  const update = (key: keyof typeof form) => (value: string) =>
+    setForm((current) => ({ ...current, [key]: value }));
+
+  return (
+    <Modal title="Add a session" onClose={onClose}>
+      <form
+        className="grid gap-4"
+        onSubmit={(event) => {
+          event.preventDefault();
+          mutation.mutate({ data: { ...form, startTime: `${form.date}T${form.startTime}:00Z`, endTime: `${form.date}T${form.endTime}:00Z` } as any }, { onSuccess: () => { onCreated(); onClose(); } });
+        }}
+      >
+        <Field
+          label="Session title"
+          value={form.title}
+          onChange={update("title")}
+          placeholder="The shape of useful research"
+          required
+          testId="input-session-title"
+        />
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field
+            label="Date"
+            value={form.date}
+            onChange={update("date")}
+            type="date"
+            required
+            testId="input-session-date"
+          />
+          <Field
+            label="Venue ID"
+            value={form.venueId}
+            onChange={update("venueId")}
+            placeholder="Optional venue id"
+            testId="input-session-venue"
+          />
+        </div>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field
+            label="Start time"
+            value={form.startTime}
+            onChange={update("startTime")}
+            type="time"
+            required
+            testId="input-session-start"
+          />
+          <Field
+            label="End time"
+            value={form.endTime}
+            onChange={update("endTime")}
+            type="time"
+            required
+            testId="input-session-end"
+          />
+        </div>
+        <Field
+          label="Conference ID"
+          value={form.conferenceId}
+          onChange={update("conferenceId")}
+          required
+          testId="input-session-conference"
+        />
+        <Field
+          label="Description"
+          value={form.description}
+          onChange={update("description")}
+          multiline
+          testId="input-session-description"
+        />
+        <div className="flex justify-end gap-2">
+          <Button variant="ghost" onClick={onClose} testId="button-cancel-session">
+            Cancel
+          </Button>
+          <Button type="submit" disabled={mutation.isPending} testId="button-create-session">
+            Add session
+          </Button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+function Documents() {
+  const [type, setType] = useState("all");
+  const [showUpload, setShowUpload] = useState(false);
+  const query = useListDocuments({
+    type: type as "all" | "paper" | "id-card" | "certificate" | "image",
+  });
+  const docs = query.data ?? [];
+
+  return (
+    <PageFrame>
+      <PageHeader
+        eyebrow="Library"
+        title="Documents"
+        body="One considered home for papers, badges, certificates, and the files that keep a conference moving."
+        action={
+          <Button onClick={() => setShowUpload(true)} testId="button-open-upload">
+            <CloudUpload className="h-4 w-4" /> Upload document
+          </Button>
+        }
+      />
+      <div className="mb-5 flex gap-2 overflow-x-auto">
+        {["all", "paper", "id-card", "certificate", "image"].map((item) => (
+          <button
+            key={item}
+            onClick={() => setType(item)}
+            data-testid={`filter-document-${item}`}
+            className={cn(
+              "rounded-full border px-4 py-2 text-xs font-bold capitalize",
+              type === item
+                ? "border-[hsl(var(--primary))] bg-[hsl(var(--primary))] text-[hsl(var(--primary-foreground))]"
+                : "border-border bg-card text-muted-foreground",
+            )}
+          >
+            {item.replace("-", " ")}
+          </button>
+        ))}
+      </div>
+      <QueryState
+        loading={query.isLoading}
+        error={query.isError}
+        onRetry={() => query.refetch()}
+        empty={!query.isLoading && docs.length === 0}
+        emptyTitle="Your library is empty"
+        emptyBody="Upload the files your team needs at hand."
+      >
+        <div className="grid gap-3">
+          {docs.map((doc) => (
+            <DocumentRow key={doc.id} document={doc} />
+          ))}
+        </div>
+      </QueryState>
+      {showUpload && (
+        <UploadModal onClose={() => setShowUpload(false)} />
+      )}
+    </PageFrame>
+  );
+}
+
+function DocumentRow({ document }: { document: ConferenceDocument }) {
+  return (
+    <div
+      className="flex items-center gap-4 rounded-xl border border-border bg-card p-4"
+      data-testid={`row-document-${document.id}`}
+    >
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[hsl(var(--primary)/.1)] text-[hsl(var(--primary))]">
+        <FileText className="h-5 w-5" />
+      </div>
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-bold">{document.fileName}</div>
+          <div className="mt-1 text-xs text-muted-foreground">
+            {document.type} · {document.fileSize} · uploaded{" "}
+            {dateLabel(document.createdAt as unknown as string)}
+          </div>
+        </div>
+        <Button
+          variant="ghost"
+          className="h-9 w-9 px-0"
+          onClick={() => document.fileUrl && window.open(document.fileUrl, "_blank")}
+          testId={`button-download-document-${document.id}`}
+        >
+        <Download className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+}
+
+function UploadModal({ onClose }: { onClose: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
+  const [uploaded, setUploaded] = useState(false);
+
+  return (
+    <Modal title="Upload a document" onClose={onClose}>
+      {uploaded ? (
+        <div className="py-8 text-center">
+          <Check className="mx-auto h-8 w-8 text-emerald-700" />
+          <h3 className="mt-4 font-bold">Ready for your team</h3>
+          <p className="mt-1 text-sm text-muted-foreground">
+            {file?.name} has been added to this upload queue.
+          </p>
+          <Button className="mt-5" onClick={onClose} testId="button-close-upload-success">
+            Done
+          </Button>
+        </div>
+      ) : (
+        <div className="grid gap-5">
+          <label
+            className="flex cursor-pointer flex-col items-center justify-center rounded-xl border-2 border-dashed border-border bg-secondary/40 px-5 py-12 text-center hover:border-[hsl(var(--primary)/.5)]"
+          >
+            <CloudUpload className="h-7 w-7 text-[hsl(var(--primary))]" />
+            <span className="mt-3 text-sm font-bold">
+              {file ? file.name : "Choose a file"}
+            </span>
+            <span className="mt-1 text-xs text-muted-foreground">
+              PDF, image, or document up to 25 MB
+            </span>
+            <input
+              type="file"
+              className="hidden"
+              onChange={(event) => setFile(event.target.files?.[0] || null)}
+              data-testid="input-upload-document"
+            />
+          </label>
+          <div className="flex justify-end gap-2">
+            <Button variant="ghost" onClick={onClose} testId="button-cancel-upload">
+              Cancel
+            </Button>
+            <Button
+              disabled={!file}
+              onClick={() => setUploaded(true)}
+              testId="button-confirm-upload"
+            >
+              Add to library
+            </Button>
+          </div>
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function Reports() {
+  const query = useGetRegistrationReport();
+  const report = query.data;
+
+  return (
+    <PageFrame>
+      <PageHeader
+        eyebrow="Signals"
+        title="Registration reports"
+        body="Read the shape of your audience before the room fills up."
+        action={
+          <Button variant="outline" onClick={() => window.print()} testId="button-print-report">
+            <Download className="h-4 w-4" /> Export report
+          </Button>
+        }
+      />
+      <QueryState loading={query.isLoading} error={query.isError} onRetry={() => query.refetch()}>
+        {report && (
+          <>
+            <div className="grid gap-4 md:grid-cols-4">
+              {[
+                ["Total registrations", report.total],
+                ["Confirmed", report.confirmed],
+                ["Pending", report.pending],
+              ].map(([label, value], index) => (
+                <div
+                  key={String(label)}
+                  className={cn(
+                    "rounded-xl border border-border bg-card p-5",
+                    index === 1 && "border-[hsl(var(--primary)/.3)] bg-[hsl(var(--primary)/.04)]",
+                  )}
+                  data-testid={`report-${String(label).toLowerCase().replaceAll(" ", "-")}`}
+                >
+                  <div className="text-sm text-muted-foreground">{label}</div>
+                  <div className="mt-5 display-font text-3xl font-bold">{value}</div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-5 grid gap-5 lg:grid-cols-[1.2fr_.8fr]">
+              <div className="rounded-xl border border-border bg-card p-6">
+                <div className="mono-font text-[10px] uppercase tracking-[.18em] text-muted-foreground">
+                  By conference
+                </div>
+                <h2 className="mt-2 text-lg font-bold">
+                  Where people are gathering
+                </h2>
+                <div className="mt-7 grid gap-5">
+                  {report.byConference.map((item) => {
+                    const percentage = report.total ? (item.registrations / report.total) * 100 : 0;
+                    return (
+                      <div key={item.conference}>
+                        <div className="mb-2 flex justify-between gap-3 text-sm">
+                          <span className="font-semibold">{item.conference}</span>
+                          <span className="mono-font text-xs text-muted-foreground">
+                            {item.registrations}
+                          </span>
+                        </div>
+                        <div className="h-2 overflow-hidden rounded-full bg-secondary">
+                          <div
+                            className="bar-fill h-full rounded-full bg-[hsl(var(--primary))]"
+                            style={{ width: `${percentage}%` }}
+                          />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          </>
+        )}
+      </QueryState>
+    </PageFrame>
+  );
+}
+
+function Profile() {
+  const { user, logout } = useAuth();
+  const [saved, setSaved] = useState(false);
+  const [name, setName] = useState(user?.name || "");
+  const [email, setEmail] = useState(user?.email || "");
+
+  const handleSave = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2500);
+  };
+
+  return (
+    <PageFrame>
+      <PageHeader
+        eyebrow="Your account"
+        title="Profile"
+        body="The details your workspace uses to keep the work personal."
+      />
+      <div className="grid gap-5 lg:grid-cols-[.75fr_1.25fr]">
+        <div className="rounded-xl border border-border bg-[hsl(var(--sidebar))] p-7 text-[hsl(var(--sidebar-foreground))]">
+          <Avatar name={name} size="lg" />
+          <h2 className="mt-5 text-xl font-bold">{name}</h2>
+          <p className="mt-1 text-sm text-[hsl(var(--sidebar-foreground)/.55)]">{email}</p>
+          <div className="mt-8 flex items-center gap-2 text-xs text-[hsl(var(--sidebar-foreground)/.6)]">
+            <span className="h-2 w-2 rounded-full bg-emerald-400" />
+            {((user?.role ?? "user").charAt(0).toUpperCase() + (user?.role ?? "user").slice(1))} access
+          </div>
+        </div>
+        <div className="rounded-xl border border-border bg-card p-6 md:p-8">
+          <div className="mb-7">
+            <h2 className="text-lg font-bold">Personal details</h2>
+            <p className="mt-1 text-sm text-muted-foreground">
+              This is how your team will see you in Convene.
+            </p>
+          </div>
+          <form className="grid gap-5" onSubmit={handleSave}>
+            <Field
+              label="Full name"
+              value={name}
+              onChange={setName}
+              required
+              testId="input-profile-name"
+            />
+            <Field
+              label="Work email"
+              value={email}
+              onChange={setEmail}
+              type="email"
+              required
+              testId="input-profile-email"
+            />
+            <div className="flex items-center justify-end gap-3">
+              {saved && (
+                <span className="text-xs font-semibold text-emerald-700">
+                  Changes saved
+                </span>
+              )}
+              <Button type="submit" testId="button-save-profile">
+                Save profile
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </PageFrame>
+  );
+}
+
+function Settings() {
+  const { user } = useAuth();
+  const [saved, setSaved] = useState(false);
+
+  if (user?.role !== "admin") {
+    return (
+      <PageFrame>
+        <PageHeader eyebrow="Settings" title="Settings" />
+        <div className="rounded-xl border border-dashed border-border bg-card px-6 py-14 text-center">
+          <h3 className="font-semibold">Settings are only available to administrators.</h3>
+        </div>
+      </PageFrame>
+    );
+  }
+
+  return (
+    <PageFrame>
+      <PageHeader
+        eyebrow="Workspace"
+        title="Settings"
+        body="Set the defaults that keep your team moving in the same direction."
+      />
+      <div className="grid gap-5">
+        <div className="rounded-xl border border-border bg-card p-6 md:p-8">
+          <h2 className="text-lg font-bold">Workspace defaults</h2>
+          <p className="mt-1 text-sm text-muted-foreground">
+            Small choices, fewer surprises.
+          </p>
+          <div className="mt-7 grid gap-5">
+            <Field
+              label="Workspace name"
+              value="Convene"
+              onChange={() => {}}
+              required
+              testId="input-workspace-name"
+            />
+          </div>
+          <div className="flex items-center justify-end gap-3 mt-6">
+            {saved && (
+              <span className="text-xs font-semibold text-emerald-700">Changes saved</span>
+            )}
+            <Button type="submit" testId="button-save-settings">
+              Save settings
+            </Button>
+          </div>
+        </div>
+      </div>
+    </PageFrame>
+  );
+}
+
+function RoleDashboard() {
+  const { user } = useAuth();
+  switch (user?.role) {
+    case "admin": return <AdminDashboard />;
+    case "organiser": return <OrganiserDashboard />;
+    case "speaker": return <SpeakerDashboard />;
+    case "attendee": return <AttendeeDashboard />;
+    default: return <AdminDashboard />;
+  }
+}
+
+function ModulePage() {
+  const [location] = useLocation();
+  if (location === "/conferences" || location === "/conferences/:id") return <Conferences />;
+  if (location === "/speakers") return <Speakers />;
+  if (location === "/attendees") return <Attendees />;
+  if (location === "/venues") return <Venues />;
+  if (location === "/schedule") return <Schedule />;
+  if (location === "/documents") return <Documents />;
+  if (location === "/reports") return <Reports />;
+  if (location === "/profile") return <Profile />;
+  if (location === "/settings") return <Settings />;
+  return <RoleDashboard />;
+}
+
+function AuthRoute({ children }: { children: () => React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!isLoading && !isAuthenticated) {
+      setLocation("/login");
+    }
+  }, [isLoading, isAuthenticated, setLocation]);
+
+  if (isLoading) return <div className="min-h-[100dvh] flex items-center justify-center"><LoadingRows count={2} /></div>;
+  if (!isAuthenticated) return null;
+  return <>{children()}</>;
+}
+
+function GuestRoute({ children }: { children: () => React.ReactNode }) {
+  const { isAuthenticated, isLoading } = useAuth();
+  const [, setLocation] = useLocation();
+
+  useEffect(() => {
+    if (!isLoading && isAuthenticated) {
+      setLocation("/dashboard");
+    }
+  }, [isLoading, isAuthenticated, setLocation]);
+
+  if (isLoading) return <div className="min-h-[100dvh] flex items-center justify-center"><LoadingRows count={2} /></div>;
+  if (isAuthenticated) return null;
+  return <>{children()}</>;
+}
+
+function Router() {
+  const [location] = useLocation();
+
+  return (
+    <ErrorBoundary resetKey={location}>
+      <AuthProvider>
+        <Switch>
+          {/* Auth pages - only accessible when not logged in */}
+          <Route path="/login" component={LoginPage} />
+          <Route path="/signup" component={SignupPage} />
+
+          {/* Protected routes - require authentication */}
+          <Route path="/dashboard">
+            <AuthRoute>{() => <DashboardLayout><RoleDashboard /></DashboardLayout>}</AuthRoute>
+          </Route>
+          <Route path="/conferences">
+            <AuthRoute>{() => <DashboardLayout><Conferences /></DashboardLayout>}</AuthRoute>
+          </Route>
+          <Route path="/conferences/:id">
+            <AuthRoute>{() => <DashboardLayout><ConferenceDetailPage /></DashboardLayout>}</AuthRoute>
+          </Route>
+          <Route path="/speakers">
+            <AuthRoute>{() => <DashboardLayout><Speakers /></DashboardLayout>}</AuthRoute>
+          </Route>
+          <Route path="/attendees">
+            <AuthRoute>{() => <DashboardLayout><Attendees /></DashboardLayout>}</AuthRoute>
+          </Route>
+          <Route path="/attendee/conferences">
+            <AuthRoute>{() => <DashboardLayout><ConferenceBrowsePage /></DashboardLayout>}</AuthRoute>
+          </Route>
+          <Route path="/attendee/sessions">
+            <AuthRoute>{() => <DashboardLayout><SessionBrowsePage /></DashboardLayout>}</AuthRoute>
+          </Route>
+          <Route path="/venues">
+            <AuthRoute>{() => <DashboardLayout><Venues /></DashboardLayout>}</AuthRoute>
+          </Route>
+          <Route path="/schedule">
+            <AuthRoute>{() => <DashboardLayout><Schedule /></DashboardLayout>}</AuthRoute>
+          </Route>
+          <Route path="/documents">
+            <AuthRoute>{() => <DashboardLayout><Documents /></DashboardLayout>}</AuthRoute>
+          </Route>
+          <Route path="/reports">
+            <AuthRoute>{() => <DashboardLayout><Reports /></DashboardLayout>}</AuthRoute>
+          </Route>
+          <Route path="/profile">
+            <AuthRoute>{() => <DashboardLayout><Profile /></DashboardLayout>}</AuthRoute>
+          </Route>
+          <Route path="/settings">
+            <AuthRoute>{() => <DashboardLayout><Settings /></DashboardLayout>}</AuthRoute>
+          </Route>
+
+          {/* Redirect root to login or dashboard */}
+          <Route path="/">
+            <GuestRoute>{() => <LoginPage />}</GuestRoute>
+            <AuthRoute>{() => <DashboardLayout><RoleDashboard /></DashboardLayout>}</AuthRoute>
+          </Route>
+
+          <Route component={NotFound} />
+        </Switch>
+      </AuthProvider>
+    </ErrorBoundary>
+  );
+}
+
+function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider>
+        <WouterRouter base={import.meta.env.BASE_URL.replace(/\/$/, "")}>
+          <Router />
+        </WouterRouter>
+        <Toaster />
+      </TooltipProvider>
+    </QueryClientProvider>
+  );
+}
+
+export default App;

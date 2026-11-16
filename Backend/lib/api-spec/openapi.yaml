@@ -1,0 +1,598 @@
+openapi: 3.1.0
+info:
+  # Do not change the title, if the title changes, the import paths will be broken
+  title: Api
+  version: 0.1.0
+  description: Conference Management System API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: dashboard
+  - name: conferences
+  - name: speakers
+  - name: attendees
+  - name: venues
+  - name: sessions
+  - name: documents
+  - name: reports
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      description: Returns server health status
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [dashboard]
+      summary: Get dashboard summary
+      responses:
+        "200":
+          description: Dashboard metrics and recent activity
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+  /conferences:
+    get:
+      operationId: listConferences
+      tags: [conferences]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [all, planning, published, live, completed]
+            default: all
+        - name: search
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Conference list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Conference"
+    post:
+      operationId: createConference
+      tags: [conferences]
+      summary: Create a conference
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConferenceInput"
+      responses:
+        "201":
+          description: Created conference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conference"
+  /conferences/{conferenceId}:
+    get:
+      operationId: getConference
+      tags: [conferences]
+      parameters:
+        - $ref: "#/components/parameters/ConferenceId"
+      responses:
+        "200":
+          description: Conference details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ConferenceDetail"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateConference
+      tags: [conferences]
+      parameters:
+        - $ref: "#/components/parameters/ConferenceId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ConferenceUpdate"
+      responses:
+        "200":
+          description: Updated conference
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Conference"
+    delete:
+      operationId: deleteConference
+      tags: [conferences]
+      parameters:
+        - $ref: "#/components/parameters/ConferenceId"
+      responses:
+        "204":
+          description: Deleted
+  /speakers:
+    get:
+      operationId: listSpeakers
+      tags: [speakers]
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: conferenceId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Speaker list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Speaker"
+    post:
+      operationId: createSpeaker
+      tags: [speakers]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpeakerInput"
+      responses:
+        "201":
+          description: Created speaker
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Speaker"
+  /speakers/{speakerId}:
+    patch:
+      operationId: updateSpeaker
+      tags: [speakers]
+      parameters:
+        - $ref: "#/components/parameters/SpeakerId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpeakerUpdate"
+      responses:
+        "200":
+          description: Updated speaker
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Speaker"
+    delete:
+      operationId: deleteSpeaker
+      tags: [speakers]
+      parameters:
+        - $ref: "#/components/parameters/SpeakerId"
+      responses:
+        "204":
+          description: Deleted
+  /attendees:
+    get:
+      operationId: listAttendees
+      tags: [attendees]
+      parameters:
+        - name: search
+          in: query
+          schema:
+            type: string
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [all, confirmed, pending, checked-in]
+            default: all
+      responses:
+        "200":
+          description: Attendee list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Attendee"
+  /venues:
+    get:
+      operationId: listVenues
+      tags: [venues]
+      responses:
+        "200":
+          description: Venue list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Venue"
+    post:
+      operationId: createVenue
+      tags: [venues]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VenueInput"
+      responses:
+        "201":
+          description: Created venue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Venue"
+  /venues/{venueId}:
+    patch:
+      operationId: updateVenue
+      tags: [venues]
+      parameters:
+        - $ref: "#/components/parameters/VenueId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/VenueUpdate"
+      responses:
+        "200":
+          description: Updated venue
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Venue"
+    delete:
+      operationId: deleteVenue
+      tags: [venues]
+      parameters:
+        - $ref: "#/components/parameters/VenueId"
+      responses:
+        "204":
+          description: Deleted
+  /sessions:
+    get:
+      operationId: listSessions
+      tags: [sessions]
+      parameters:
+        - name: conferenceId
+          in: query
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Session list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Session"
+    post:
+      operationId: createSession
+      tags: [sessions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SessionInput"
+      responses:
+        "201":
+          description: Created session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Session"
+  /documents:
+    get:
+      operationId: listDocuments
+      tags: [documents]
+      parameters:
+        - name: type
+          in: query
+          schema:
+            type: string
+            enum: [all, paper, id-card, certificate, image]
+            default: all
+      responses:
+        "200":
+          description: Document list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Document"
+  /reports/registration:
+    get:
+      operationId: getRegistrationReport
+      tags: [reports]
+      responses:
+        "200":
+          description: Registration report
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RegistrationReport"
+components:
+  parameters:
+    ConferenceId:
+      name: conferenceId
+      in: path
+      required: true
+      schema:
+        type: string
+    SpeakerId:
+      name: speakerId
+      in: path
+      required: true
+      schema:
+        type: string
+    VenueId:
+      name: venueId
+      in: path
+      required: true
+      schema:
+        type: string
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+    Role:
+      type: string
+      enum: [admin, organiser, speaker, attendee]
+    ConferenceStatus:
+      type: string
+      enum: [planning, published, live, completed]
+    AttendeeStatus:
+      type: string
+      enum: [confirmed, pending, checked-in]
+    User:
+      type: object
+      required: [id, name, email, role, avatarUrl]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        role: { $ref: "#/components/schemas/Role" }
+        avatarUrl: { type: string }
+    Conference:
+      type: object
+      required: [id, title, description, startDate, endDate, location, status, attendeesCount, speakersCount, sessionsCount, accent]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        location: { type: string }
+        status: { $ref: "#/components/schemas/ConferenceStatus" }
+        attendeesCount: { type: number }
+        speakersCount: { type: number }
+        sessionsCount: { type: number }
+        accent: { type: string }
+        bannerUrl: { type: ["string", "null"] }
+    ConferenceInput:
+      type: object
+      required: [title, description, startDate, endDate, location]
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        location: { type: string }
+        bannerUrl: { type: ["string", "null"] }
+    ConferenceUpdate:
+      type: object
+      properties:
+        title: { type: string, minLength: 1 }
+        description: { type: string }
+        startDate: { type: string, format: date }
+        endDate: { type: string, format: date }
+        location: { type: string }
+        status: { $ref: "#/components/schemas/ConferenceStatus" }
+        bannerUrl: { type: ["string", "null"] }
+    ConferenceDetail:
+      allOf:
+        - $ref: "#/components/schemas/Conference"
+        - type: object
+          required: [speakers, venues, sessions, documents]
+          properties:
+            speakers:
+              type: array
+              items: { $ref: "#/components/schemas/Speaker" }
+            venues:
+              type: array
+              items: { $ref: "#/components/schemas/Venue" }
+            sessions:
+              type: array
+              items: { $ref: "#/components/schemas/Session" }
+            documents:
+              type: array
+              items: { $ref: "#/components/schemas/Document" }
+    Speaker:
+      type: object
+      required: [id, name, email, organisation, bio, photoUrl, conferenceId, sessionCount]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        organisation: { type: string }
+        bio: { type: string }
+        photoUrl: { type: string }
+        conferenceId: { type: string }
+        sessionCount: { type: number }
+    SpeakerInput:
+      type: object
+      required: [name, email, organisation, bio, conferenceId]
+      properties:
+        name: { type: string, minLength: 1 }
+        email: { type: string }
+        organisation: { type: string }
+        bio: { type: string }
+        conferenceId: { type: string }
+        photoUrl: { type: string }
+    SpeakerUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        email: { type: string }
+        organisation: { type: string }
+        bio: { type: string }
+        conferenceId: { type: string }
+        photoUrl: { type: string }
+    Attendee:
+      type: object
+      required: [id, name, email, organization, conference, registrationDate, status, avatarUrl]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        email: { type: string }
+        organization: { type: string }
+        conference: { type: string }
+        registrationDate: { type: string, format: date }
+        status: { $ref: "#/components/schemas/AttendeeStatus" }
+        avatarUrl: { type: string }
+    Venue:
+      type: object
+      required: [id, name, building, room, capacity, booked, conferenceId]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        building: { type: string }
+        room: { type: string }
+        capacity: { type: number }
+        booked: { type: number }
+        conferenceId: { type: string }
+    VenueInput:
+      type: object
+      required: [name, building, room, capacity, conferenceId]
+      properties:
+        name: { type: string }
+        building: { type: string }
+        room: { type: string }
+        capacity: { type: number }
+        conferenceId: { type: string }
+    VenueUpdate:
+      type: object
+      properties:
+        name: { type: string }
+        building: { type: string }
+        room: { type: string }
+        capacity: { type: number }
+        conferenceId: { type: string }
+    Session:
+      type: object
+      required: [id, title, description, speakerId, speakerName, venueId, venueName, conferenceId, date, startTime, endTime, track]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        description: { type: string }
+        speakerId: { type: string }
+        speakerName: { type: string }
+        venueId: { type: string }
+        venueName: { type: string }
+        conferenceId: { type: string }
+        date: { type: string, format: date }
+        startTime: { type: string }
+        endTime: { type: string }
+        track: { type: string }
+    SessionInput:
+      type: object
+      required: [title, description, speakerId, venueId, conferenceId, date, startTime, endTime, track]
+      properties:
+        title: { type: string }
+        description: { type: string }
+        speakerId: { type: string }
+        venueId: { type: string }
+        conferenceId: { type: string }
+        date: { type: string, format: date }
+        startTime: { type: string }
+        endTime: { type: string }
+        track: { type: string }
+    Document:
+      type: object
+      required: [id, name, type, size, uploadedAt, uploadedBy, conferenceId, fileUrl]
+      properties:
+        id: { type: string }
+        name: { type: string }
+        type: { type: string }
+        size: { type: string }
+        uploadedAt: { type: string, format: date }
+        uploadedBy: { type: string }
+        conferenceId: { type: string }
+        fileUrl: { type: string }
+    Activity:
+      type: object
+      required: [id, title, detail, time, kind]
+      properties:
+        id: { type: string }
+        title: { type: string }
+        detail: { type: string }
+        time: { type: string }
+        kind: { type: string }
+    DashboardSummary:
+      type: object
+      required: [activeConferences, totalAttendees, totalSpeakers, sessionsThisWeek, registrationTrend, activities, upcomingSessions]
+      properties:
+        activeConferences: { type: number }
+        totalAttendees: { type: number }
+        totalSpeakers: { type: number }
+        sessionsThisWeek: { type: number }
+        registrationTrend:
+          type: array
+          items:
+            type: object
+            required: [label, value]
+            properties:
+              label: { type: string }
+              value: { type: number }
+        activities:
+          type: array
+          items: { $ref: "#/components/schemas/Activity" }
+        upcomingSessions:
+          type: array
+          items: { $ref: "#/components/schemas/Session" }
+    RegistrationReport:
+      type: object
+      required: [total, confirmed, pending, checkedIn, byConference]
+      properties:
+        total: { type: number }
+        confirmed: { type: number }
+        pending: { type: number }
+        checkedIn: { type: number }
+        byConference:
+          type: array
+          items:
+            type: object
+            required: [conference, registrations]
+            properties:
+              conference: { type: string }
+              registrations: { type: number }
+

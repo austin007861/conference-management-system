@@ -1,0 +1,22 @@
+name = "convene_backend"
+main = "src/index.worker.ts"
+compatibility_date = "2026-11-12"
+account_id = "9af746b92474d00295efddacc315dbbc"
+
+[[d1_databases]]
+binding = "convene_db"
+database_name = "convene_db"
+database_id = "37d69981-e179-41e1-994a-78c48872caad"
+
+# R2 is not enabled on this account yet. Once you enable R2 in the Cloudflare
+# Dashboard and create a bucket named "convene-bucket", uncomment the block
+# below and redeploy. See README section 21 "R2 storage".
+# [[r2_buckets]]
+# binding = "convene_bucket"
+# bucket_name = "convene-bucket"
+
+[vars]
+NODE_ENV = "production"
+
+[observability.logs]
+enabled = true

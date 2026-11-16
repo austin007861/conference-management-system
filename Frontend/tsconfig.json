@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "es2022",
+    "lib": ["esnext", "dom", "dom.iterable"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "jsx": "preserve",
+    "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "strictNullChecks": true,
+    "types": ["node", "vite/client"],
+    "paths": {
+      "@/*": ["./src/*"],
+      "@workspace/api-client-react": ["./lib/api-client-react/src/index.ts"]
+    }
+  },
+  "include": ["src/**/*", "lib/**/*"],
+  "exclude": ["node_modules", "build", "dist", "**/*.test.ts"],
+  "references": [
+    {
+      "path": "./lib/api-client-react"
+    }
+  ]
+}

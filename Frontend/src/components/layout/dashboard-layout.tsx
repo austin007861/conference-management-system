@@ -1,0 +1,178 @@
+import { useState, useMemo, type ReactNode } from "react";
+import { useLocation, Link } from "wouter";
+import { useAuth } from "@/context/auth-context";
+import {
+  LayoutDashboard,
+  CalendarDays,
+  UserRound,
+  UsersRound,
+  Building2,
+  Clock3,
+  Library,
+  BarChart3,
+  LogOut,
+  Settings2,
+  ShieldCheck,
+  Plus,
+  ChevronRight,
+} from "lucide-react";
+import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
+
+type NavItem = {
+  href: string;
+  label: string;
+  icon: React.ComponentType<{ className?: string }>;
+  roles: ("admin" | "organiser" | "speaker" | "attendee")[];
+};
+
+const NAV_ITEMS: NavItem[] = [
+  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "organiser", "speaker", "attendee"] },
+  { href: "/conferences", label: "Conferences", icon: CalendarDays, roles: ["admin", "organiser", "speaker", "attendee"] },
+  { href: "/speakers", label: "Speakers", icon: UserRound, roles: ["admin", "organiser"] },
+  { href: "/attendees", label: "Attendees", icon: UsersRound, roles: ["admin", "organiser"] },
+  { href: "/venues", label: "Venues", icon: Building2, roles: ["admin", "organiser"] },
+  { href: "/schedule", label: "Schedule", icon: Clock3, roles: ["admin", "organiser", "speaker", "attendee"] },
+  { href: "/documents", label: "Documents", icon: Library, roles: ["admin", "organiser", "speaker"] },
+  { href: "/reports", label: "Reports", icon: BarChart3, roles: ["admin", "organiser"] },
+  { href: "/profile", label: "Profile", icon: UserRound, roles: ["admin", "organiser", "speaker", "attendee"] },
+  { href: "/settings", label: "Settings", icon: Settings2, roles: ["admin"] },
+];
+
+export function DashboardLayout({ children }: { children: ReactNode }) {
+  const { user, logout, isAuthenticated } = useAuth();
+  const [location, setLocation] = useLocation();
+  const [mobileOpen, setMobileOpen] = useState(false);
+
+  const navItems = useMemo(
+    () => NAV_ITEMS.filter((item) => !user || item.roles.includes(user.role)),
+    [user],
+  );
+
+  if (!isAuthenticated || !user) {
+    return null;
+  }
+
+  const handleLogout = async () => {
+    await logout();
+    setLocation("/login");
+  };
+
+  return (
+    <div className="dashboard-shell flex min-h-[100dvh] bg-background">
+      <aside
+        className={cn(
+          "sidebar fixed inset-y-0 left-0 z-40 flex w-64 flex-col border-r border-[hsl(var(--sidebar-border))] bg-[hsl(var(--sidebar))] px-4 py-5 text-[hsl(var(--sidebar-foreground))] transition-transform duration-300",
+          mobileOpen ? "translate-x-0" : "-translate-x-full",
+          "md:relative md:translate-x-0",
+        )}
+      >
+        <div className="flex items-center gap-3 px-3 mb-10">
+          <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-[hsl(var(--accent))] text-[hsl(var(--sidebar))]">
+            <ShieldCheck className="h-5 w-5 fill-current" />
+          </div>
+          <div>
+            <div className="display-font text-lg font-bold tracking-tight">Convene</div>
+            <div className="mono-font text-[9px] uppercase tracking-[.22em] text-[hsl(var(--sidebar-foreground)/.55)]">
+              Management system
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-10 px-3 text-[10px] font-bold uppercase tracking-[.2em] text-[hsl(var(--sidebar-foreground)/.42)]">
+          Navigation
+        </div>
+        <nav className="mt-3 grid gap-1 px-2">
+          {navItems.map((item) => {
+            const Icon = item.icon;
+            const isActive = location === item.href;
+            return (
+              <Link
+                key={item.href}
+                href={item.href}
+                onClick={() => setMobileOpen(false)}
+                data-testid={`link-${item.label.toLowerCase()}`}
+                className={cn(
+                  "group flex items-center gap-3 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+                  "text-[hsl(var(--sidebar-foreground)/.65)] hover:bg-[hsl(var(--sidebar-accent))] hover:text-[hsl(var(--sidebar-foreground))]",
+                  isActive
+                    ? "bg-[hsl(var(--sidebar-primary))] font-bold text-[hsl(var(--sidebar-primary-foreground))] shadow-sm"
+                    : "",
+                )}
+              >
+                <Icon className="h-4 w-4" />
+                <span>{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
+
+        <div className="mt-auto pt-6 border-t border-[hsl(var(--sidebar-border))]">
+          <div className="px-3 mb-4">
+            <div className="text-[10px] font-bold uppercase tracking-[.2em] text-[hsl(var(--sidebar-foreground)/.42)] mb-2">
+              Account
+            </div>
+            <div className="flex items-center gap-3 rounded-lg border border-[hsl(var(--sidebar-border))] px-3 py-2">
+              <div className="h-8 w-8 rounded-full bg-[hsl(var(--accent)/.24)] flex items-center justify-center text-[hsl(var(--primary))] font-bold text-xs">
+                {user.name.split(" ").map((n) => n[0]).join("").toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <div className="block truncate text-sm font-semibold">{user.name}</div>
+                <div className="block text-[11px] text-[hsl(var(--sidebar-foreground)/.5)]">
+                  {user.role.charAt(0).toUpperCase() + user.role.slice(1)}
+                </div>
+              </div>
+            </div>
+          </div>
+          <Button
+            onClick={handleLogout}
+            variant="ghost"
+            className="w-full h-10 text-[hsl(var(--sidebar-foreground)/.65)] hover:bg-[hsl(var(--sidebar-accent))] hover:text-[hsl(var(--sidebar-foreground))] flex items-center justify-center gap-2"
+            data-testid="button-logout"
+          >
+            <LogOut className="h-4 w-4" /> Logout
+          </Button>
+        </div>
+      </aside>
+
+      {mobileOpen && (
+        <button
+          aria-label="Close navigation"
+          onClick={() => setMobileOpen(false)}
+          className="fixed inset-0 z-30 bg-[hsl(var(--sidebar)/.45)] md:hidden"
+          data-testid="button-close-navigation"
+        />
+      )}
+
+      <main className="flex-1 min-w-0">
+        <header
+          className="sticky top-0 z-20 flex h-16 items-center justify-between border-b border-border/80 bg-[hsl(var(--background)/.88)] px-5 backdrop-blur-md md:px-9"
+        >
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setMobileOpen((open) => !open)}
+              className="rounded-md p-2 hover:bg-secondary md:hidden"
+              data-testid="button-open-navigation"
+            >
+              <span className="sr-only">Toggle navigation</span>
+              <div className="h-1 w-5 bg-[hsl(var(--sidebar-foreground))] rounded-sm"></div>
+              <div className="h-1 w-5 bg-[hsl(var(--sidebar-foreground))] rounded-sm mt-1.5"></div>
+              <div className="h-1 w-5 bg-[hsl(var(--sidebar-foreground))] rounded-sm mt-1.5"></div>
+            </button>
+            <div className="mono-font hidden text-[10px] uppercase tracking-[.18em] text-muted-foreground md:block">
+              Convene Management
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <Link href="/profile" className="ml-1" data-testid="link-header-profile">
+              <div className="h-8 w-8 rounded-full bg-[hsl(var(--accent)/.24)] flex items-center justify-center text-[hsl(var(--primary))] font-bold text-xs">
+                {user.name.split(" ").map((n) => n[0]).join("").toUpperCase()}
+              </div>
+            </Link>
+          </div>
+        </header>
+        <div className="mx-auto max-w-[1500px] p-5 md:p-9">{children}</div>
+      </main>
+    </div>
+  );
+}

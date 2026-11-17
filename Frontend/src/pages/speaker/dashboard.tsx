@@ -1,139 +1,40 @@
-import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
+import { useAuth } from "@/context/auth-context";
+import { CalendarDays, UserRound, Clock3 } from "lucide-react";
 
-type User = {
-  id: string;
-  name: string;
-  email: string;
-  role: "admin" | "organiser" | "speaker" | "attendee";
-};
+export function SpeakerDashboard() {
+  const { user } = useAuth();
+  const stats = [
+    { label: "My sessions", value: "0", icon: CalendarDays },
+    { label: "Profile completeness", value: "0%", icon: UserRound },
+  ];
 
-type AuthContextType = {
-  user: User | null;
-  isLoading: boolean;
-  isAuthenticated: boolean;
-  login: (email: string, password: string) => Promise<void>;
-  signup: (name: string, email: string, password: string, role: "attendee" | "speaker") => Promise<void>;
-  logout: () => Promise<void>;
-  fetchMe: () => Promise<void>;
-};
+  return (
+    <div className="space-y-6">
+      <div>
+        <h1 className="text-2xl font-bold tracking-tight">Speaker Dashboard</h1>
+        <p className="text-sm text-muted-foreground">
+          View your assigned sessions and manage your speaker profile. Welcome back, {user?.name}.
+        </p>
+      </div>
 
-const AuthContext = createContext<AuthContextType | null>(null);
+      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        {stats.map(({ label, value, icon: Icon }) => (
+          <div key={label} className="rounded-xl border border-border bg-card p-5">
+            <Icon className="h-4 w-4 text-[hsl(var(--primary))]" />
+            <div className="mt-5 flex items-baseline gap-1">
+              <span className="display-font text-2xl font-bold">{value}</span>
+            </div>
+            <div className="mt-1 text-sm text-muted-foreground">{label}</div>
+          </div>
+        ))}
+      </div>
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3000";
-
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-
-  useEffect(() => {
-    fetchMe();
-  }, []);
-
-  const fetchMe = useCallback(async () => {
-    try {
-      const response = await fetch(`${API_URL}/api/auth/me`, {
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        if (data.success && data.data) {
-          setUser({
-            id: data.data.id,
-            name: data.data.name,
-            email: data.data.email,
-            role: data.data.role as User["role"],
-          });
-        }
-      }
-    } catch {
-      // User not authenticated
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  const login = useCallback(async (email: string, password: string) => {
-    const response = await fetch(`${API_URL}/api/auth/login`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-      throw new Error(data.message || "Login failed");
-    }
-
-    setUser({
-      id: data.data.id,
-      name: data.data.name,
-      email: data.data.email,
-      role: data.data.role as User["role"],
-    });
-  }, []);
-
-  const signup = useCallback(async (
-    name: string,
-    email: string,
-    password: string,
-    role: "attendee" | "speaker",
-  ) => {
-    const response = await fetch(`${API_URL}/api/auth/signup`, {
-      method: "POST",
-      credentials: "include",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, email, password, role }),
-    });
-
-    const data = await response.json();
-
-    if (!response.ok || !data.success) {
-      throw new Error(data.message || "Signup failed");
-    }
-
-    setUser({
-      id: data.data.id,
-      name: data.data.name,
-      email: data.data.email,
-      role: data.data.role as User["role"],
-    });
-  }, []);
-
-  const logout = useCallback(async () => {
-    try {
-      await fetch(`${API_URL}/api/auth/logout`, {
-        method: "POST",
-        credentials: "include",
-        headers: { "Content-Type": "application/json" },
-      });
-    } catch {
-      // Ignore network failures — the local session must still be cleared.
-    } finally {
-      setUser(null);
-    }
-  }, []);
-
-  const value = {
-    user,
-    isLoading,
-    isAuthenticated: !!user,
-    login,
-    signup,
-    logout,
-    fetchMe,
-  };
-
-  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
-}
-
-export function useAuth() {
-  const context = useContext(AuthContext);
-  if (!context) {
-    throw new Error("useAuth must be used within an AuthProvider");
-  }
-  return context;
+      <div className="rounded-xl border border-border bg-card p-6">
+        <h2 className="text-lg font-bold">My sessions</h2>
+        <p className="mt-1 text-sm text-muted-foreground">
+          No sessions assigned yet. Check back later or contact an organiser.
+        </p>
+      </div>
+    </div>
+  );
 }
